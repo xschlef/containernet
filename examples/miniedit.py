@@ -60,6 +60,8 @@ from mininet.moduledeps import moduleDeps
 from mininet.topo import SingleSwitchTopo, LinearTopo, SingleSwitchReversedTopo
 from mininet.topolib import TreeTopo
 
+import mininet as mn
+
 print 'MiniEdit running against Mininet '+VERSION
 MININET_VERSION = re.sub(r'[^\d\.]', '', VERSION)
 if StrictVersion(MININET_VERSION) > StrictVersion('2.0'):
@@ -505,6 +507,20 @@ class HostDialog(CustomDialog):
         if 'stopCommand' in self.prefValues:
             self.stopEntry.insert(0, str(self.prefValues['stopCommand']))
 
+        # Field for class
+        Label(self.propFrame, text="Mininet Class:").grid(row=7, sticky=E)
+        self.clsVar = StringVar(self.propFrame)
+        self.clsOption = OptionMenu(self.propFrame, self.clsVar, "Host", "CPULimitedHost", "Docker", "LibvirtHost")
+        self.clsOption.grid(row=7, column=1, sticky=W)
+        self.clsVar.set("Host")
+
+        # Field for default route
+        Label(self.propFrame, text="Image:").grid(row=8, sticky=E)
+        self.dimageEntry = Entry(self.propFrame)
+        self.dimageEntry.grid(row=8, column=1)
+        if 'dimage' in self.prefValues:
+            self.dimageEntry.insert(0, self.prefValues['dimage'])
+
         ### TAB 2
         # External Interfaces
         self.externalInterfaces = 0
@@ -597,6 +613,8 @@ class HostDialog(CustomDialog):
         results = {'cpu': self.cpuEntry.get(),
                    'cores':self.coreEntry.get(),
                    'sched':self.schedVar.get(),
+                   'cls':self.clsVar.get(),
+                   'dimage': self.dimageEntry.get(),
                    'hostname':self.hostnameEntry.get(),
                    'ip':self.ipEntry.get(),
                    'defaultRoute':self.routeEntry.get(),
@@ -2472,6 +2490,10 @@ class MiniEdit( Frame ):
                 newHostOpts['stopCommand'] = hostBox.result['stopCommand']
             if len(hostBox.result['cpu']) > 0:
                 newHostOpts['cpu'] = float(hostBox.result['cpu'])
+            if len(hostBox.result['cls']) > 0:
+                newHostOpts['cls'] = str(hostBox.result['cls'])
+            if len(hostBox.result['dimage']) > 0:
+                newHostOpts['dimage'] = str(hostBox.result['dimage'])
             if len(hostBox.result['cores']) > 0:
                 newHostOpts['cores'] = hostBox.result['cores']
             if len(hostBox.result['hostname']) > 0:
@@ -2784,19 +2806,19 @@ class MiniEdit( Frame ):
                     ipBaseNum, prefixLen = netParse( self.appPrefs['ipBase'] )
                     ip = ipAdd(i=nodeNum, prefixLen=prefixLen, ipBaseNum=ipBaseNum)
 
+                # small hack to choose the correct host class
+                hostCls = Host
+                if "cls" in opts:
+                    hostCls = getattr(mn.node, opts['cls'])
+                    if 'dimage' in opts and hostCls == mn.node.Docker:
+                        hostCls = partial(mn.node.Docker, dimage=opts['dimage'])
+                    if hasattr(mn.node, "LibvirtHost") and 'dimage' in opts and hostCls == mn.node.LibvirtHost:
+                        hostCls = partial(mn.LibvirtHost, disk_image=opts['dimage'])
                 # Create the correct host class
-                if 'cores' in opts or 'cpu' in opts:
-                    if 'privateDirectory' in opts:
-                        hostCls = partial( CPULimitedHost,
-                                           privateDirs=opts['privateDirectory'] )
-                    else:
-                        hostCls=CPULimitedHost
-                else:
-                    if 'privateDirectory' in opts:
-                        hostCls = partial( Host,
-                                           privateDirs=opts['privateDirectory'] )
-                    else:
-                        hostCls=Host
+                if 'privateDirectory' in opts:
+                    hostCls = partial( hostCls,
+                                       privateDirs=opts['privateDirectory'] )
+                print opts
                 print hostCls
                 newHost = net.addHost( name,
                                        cls=hostCls,
